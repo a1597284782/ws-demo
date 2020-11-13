@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Document</title>
+    <script src="https://cdn.jsdelivr.net/npm/vue@2.6.12"></script>
+  </head>
+  <body>
+    <div id="app">
+      <div v-if="isShow">
+        <p>昵称：<input type="text" v-model="name" /></p>
+        <p>uid: <input type="text" v-model="uid" /></p>
+        <p>房间号：<input type="text" v-model="roomid" /></p>
+        <button type="button" @click="enter">进入聊天室</button>
+      </div>
+
+      <div v-else>
+        <ul>
+          <li v-for="(item, index) in lists" :key="index">{{item}}</li>
+          <li>在线人数 {{num}}</li>
+        </ul>
+        <div class="ctrl">
+          <input type="text" v-model="message" />
+          <button type="button" @click="send()">按钮</button>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      var app = new Vue({
+        el: '#app',
+        data: {
+          // 用户唯一标识
+          uid: '',
+          // 消息
+          message: '',
+          lists: [],
+          ws: {},
+          // 名字
+          name: '',
+          // 是否显示
+          isShow: true,
+          // 计数
+          num: 0,
+          // 房间号
+          roomid: '',
+          // 计时器
+          handle: '',
+        },
+        mounted() {},
+        methods: {
+          // 初始化
+          init() {
+            this.ws = new WebSocket('ws://127.0.0.1:3000')
+            this.ws.onopen = this.onOpen
+            this.ws.onmessage = this.onMessage
+            this.ws.onclose = this.onClose
+            this.ws.onerror = this.onError
+          },
+
+          // 进入聊天室按钮
+          enter() {
+            if (this.name.trim() === '') {
+              alert('用户名不得为空')
+              return
+            }
+            this.init()
+            this.isShow = false
+          },
+          // 链接开始时触发
+          onOpen() {
+            console.log('onopen:' + this.ws.readyState)
+
+            // 发起鉴权
+            // this.ws.send(
+            //   JSON.stringify({
+            //     event: 'auth',
+            //     message:
+            //       'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6Imltb29jIiwiaWF0IjoxNTE2MjM5MDIyfQ.KQv-KO2KRPtFP1Hl9h3qyxiko8Czz_7vWVm-5JcyP7k',
+            //   })
+            // )
+            // 进入房间
+            this.ws.send(
+              JSON.stringify({
+                event: 'enter',
+                message: this.name,
+                roomid: this.roomid,
+                uid: this.uid
+              })
+            )
+          },
+
+          // 接受服务的消息时触发
+          onMessage(event) {
+            if (this.isShow) {
+              return
+            }
+
+            var obj = JSON.parse(event.data)
+
+            switch (obj.event) {
+              case 'noauth':
+                // 鉴权失败
+                // 路由跳转
+                console.log('鉴权失败')
+                break
+
+              case 'enter':
+                // 新用户进入
+                this.lists.push('欢迎' + obj.message + '加入聊天室')
+                break
+
+              case 'out':
+                // 用户退出
+                this.lists.push(obj.name + '已经退出了')
+                break
+
+              case 'heartbeat':
+                this.checkServer()
+
+                // 心跳监测
+                this.ws.send(
+                  JSON.stringify({
+                    event: 'heartbeat',
+                    message: 'pong',
+                  })
+                )
+                break
+
+              default:
+                if (obj.name !== this.name) {
+                  this.lists.push(obj.name + ':' + obj.message)
+                }
+            }
+
+            this.num = obj.num
+          },
+
+          // 监听关闭
+          onClose() {
+            console.log('onclose:' + this.ws.readyState)
+            this.ws.close()
+          },
+
+          // 监听报错
+          onError() {
+            console.log('onerror:' + this.ws.readyState)
+            setTimeout(() => {
+              this.init()
+            }, 1000)
+          },
+
+          // 发送按钮
+          send() {
+            this.lists.push(this.name + ':' + this.message)
+            this.ws.send(
+              JSON.stringify({
+                event: 'message',
+                name: this.name,
+                message: this.message,
+              })
+            )
+            this.message = ''
+          },
+
+          // 断线重连
+          checkServer() {
+            clearTimeout(this.handle)
+            this.handle = setTimeout(() => {
+              this.onClose()
+              setTimeout(() => {
+                this.init()
+              }, 1000)
+            }, 30000 + 1000)
+          },
+        },
+      })
+    </script>
+  </body>
+</html>
